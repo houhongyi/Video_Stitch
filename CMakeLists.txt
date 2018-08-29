@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.6)
+cmake_minimum_required(VERSION 3.1)
 project(OpencvTest)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
@@ -9,7 +9,6 @@ set(SOURCE_FILES main.cpp Camara.cpp)
 find_package(OpenCV REQUIRED) #查找opencv包
 
 add_executable(OpencvTest ${SOURCE_FILES})
-
 
 target_link_libraries(OpencvTest
         ${OpenCV_LIBS}

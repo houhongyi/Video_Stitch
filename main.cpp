@@ -1,9 +1,11 @@
 #include <opencv2/opencv.hpp>
 using namespace cv;
 
+void Camaratest();
+
 int main()
 {
-    std::vector<cv::Mat> vImg;
+    /*std::vector<cv::Mat> vImg;
     cv::Mat rImg;
     cv::Mat img_l, img_r, img_l_l, img_r_l;
     img_l = cv::imread("IMG_L.jpg");
@@ -62,7 +64,7 @@ int main()
         stitcher.blender_->feed(img_remaped_l,stitcher.maskwarped_[0],stitcher.warpdst_roi_[0].tl());
         stitcher.blender_->feed(img_remaped_r,stitcher.maskwarped_[1],stitcher.warpdst_roi_[1].tl());
         stitcher.blender_->blend(img_resault,UMat());
-        img_resault.convertTo(blended, CV_8U);
+        img_resault.con/home/happy/ClionProjects/OpencvTest/DebugvertTo(blended, CV_8U);
         printf("Blend consuming: %.4lf sec \n", ( cv::getTickCount() - blendtime) / cv::getTickFrequency());
     }
     printf("Stitch consuming: %.4lf sec \n", ( cv::getTickCount() - stitichtime) / cv::getTickFrequency()); //check processing time
@@ -70,7 +72,9 @@ int main()
     imshow("remap_R",img_remaped_r);
     imshow("remap_resault",blended);
     imshow("mask",stitcher.maskwarped_[0]);
-    imwrite("output.jpg",blended);
+    imwrite("output.jpg",blended);*/
+    waitKey(0);
+    Camaratest();
     waitKey(0);
     return 0;
 }

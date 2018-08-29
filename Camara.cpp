@@ -6,15 +6,7 @@
 \date      2016-05-04
 */
 //--------------------------------------------------------------
-#include "GxIAPI.h"
-#include "DxImageProc.h"
-#include "CTimeCounter.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <pthread.h>
-
-#define FRAMEINFOOFFSET 14
-#define MEMORY_ALLOT_ERROR -1
+#include "Camera.h"
 
 GX_DEV_HANDLE g_device = NULL;                                    ///< 设备句柄
 GX_FRAME_DATA g_frame_data = { 0 };                               ///< 采集图像参数
@@ -48,18 +40,30 @@ void GetErrorString(GX_STATUS error_status);
 //获取当前帧号
 int GetCurFrameIndex(GX_DEV_HANDLE hdevice);
 
+//启动相机
+int CamaraInit(char* s,GX_DEV_HANDLE hdevice);
+//关闭相机
+int CamaraStop(GX_DEV_HANDLE hdevice);
+
+void Camaratest()
+{
+    GX_DEV_HANDLE hdevice_test;
+    CamaraInit("1",hdevice_test);
+    CamaraStop(hdevice_test);
+}
+
 int CamaraInit(char* s,GX_DEV_HANDLE hdevice)
 {
     uid_t user = 0;
     user = geteuid();
-    if(user != 0)
+    /*if(user != 0)
     {
         printf("\n");
         printf("Please run this application with 'sudo -E ./GxAcquireContinuousSofttrigger' or"
                        " Start with root !\n");
         printf("\n");
         return 0;
-    }
+    }*/
 
     printf("\n");
 
@@ -88,7 +92,7 @@ int CamaraInit(char* s,GX_DEV_HANDLE hdevice)
         GetErrorString(status);
         return 0;
     }
-
+    printf("----- %d\n",device_number);
     if(device_number <= 0)
     {
         printf("<No device>\n");
@@ -202,36 +206,15 @@ int CamaraInit(char* s,GX_DEV_HANDLE hdevice)
         printf("<Failed to create the collection thread>\n");
         return 0;
     }
+    printf("Camara Inite OK..\r\n");
+    return 0;
+}
 
-    printf("====================Menu================\n");
-    printf("[X or x]:Exit\n");
-    printf("[S or s]:Send softtrigger command\n");
-
-    bool run = true;
-    while(run == true)
-    {
-        int c = getchar();
-        switch(c)
-        {
-            //退出程序
-            case 'X':
-            case 'x':
-                run = false;
-                break;
-
-                //发送一次软触发命令
-            case 'S':
-            case 's':
-                status = GXSendCommand(hdevice, GX_COMMAND_TRIGGER_SOFTWARE);
-                printf("<The return value of softtrigger command: %d>\n", status);
-                break;
-
-            default:
-                break;
-        }
-    }
-
+int CamaraStop(GX_DEV_HANDLE hdevice)
+{
     //为停止采集做准备
+    int ret = 0;
+    GX_STATUS status = GX_STATUS_SUCCESS;
     ret = UnPreForImage(hdevice);
     if(ret != 0)
     {
@@ -250,13 +233,15 @@ int CamaraInit(char* s,GX_DEV_HANDLE hdevice)
     {
         return 0;
     }
-
     //释放库
     status = GXCloseLib();
-
     return 0;
 }
 
+int CamaraTrigger(GX_DEV_HANDLE hdevice)//发送触发指令
+{
+    return GXSendCommand(hdevice, GX_COMMAND_TRIGGER_SOFTWARE);
+}
 //-------------------------------------------------
 /**
 \brief 获取当前帧号
