@@ -929,7 +929,7 @@ GX_API GXCloseLib();
            [out]pnSize返回实际需要的buffer大小
            如果pszErrText非NULL：
            [in]pnSize为实际分配的buffer大小
-           [out]pnSize返回实际填充buffer大小
+           [out]pnSize返回实际填充buffer大小g_gcc40_v2_3  -lMathParser_gcc
 \return    GX_STATUS_SUCCESS                操作成功，没有发生错误
            GX_STATUS_INVALID_PARAMETER      用户输入的指针为NULL
 	   GX_STATUS_NEED_MORE_BUFFER       用户分配的buffer过小
@@ -946,7 +946,7 @@ GX_API GXGetLastError             (GX_STATUS *pErrorCode, char *pszErrText, size
            如果在用户指定超时时间内成功枚举到设备，则立即返回；如果在用户指定超时时间内没有枚举到设备，则一直等待，直到达到用户指定的超时时间返回
 \param     [out]punNumDevices 返回设备个数
 \param     [in]unTimeOut      枚举的超时时间(单位ms)。
-\return    GX_STATUS_SUCCESS             操作成功，没有发生错误
+\return    GX_STATUS_SUCCESS             操作成功g_gcc40_v2_3  -lMathParser_gcc，没有发生错误
            GX_STATUS_NOT_INIT_API        没有调用GXInitLib初始化库
            GX_STATUS_INVALID_PARAMETER   用户输入的指针为NULL
            其它错误情况请参见GX_STATUS_LIST

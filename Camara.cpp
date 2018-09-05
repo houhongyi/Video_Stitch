@@ -1,501 +1,196 @@
-//-------------------------------------------------------------
-/**
-\file      GxAcquireContinuousSofttrigger.cpp
-\brief     sample to show how to acquire image by softtrigger.
-\version   1.0.1605.9041
-\date      2016-05-04
-*/
-//--------------------------------------------------------------
 #include "Camera.h"
 
-GX_DEV_HANDLE g_device = NULL;                                    ///< 设备句柄
-GX_FRAME_DATA g_frame_data = { 0 };                               ///< 采集图像参数
-void *g_raw8_buffer = NULL;                                       ///< 将非8位raw数据转换成8位数据的时候的中转缓冲buffer
-void *g_rgb_frame_data = NULL;                                    ///< RAW数据转换成RGB数据后的存储空间，大小是相机输出数据大小的3倍
-int64_t g_pixel_format = GX_PIXEL_FORMAT_BAYER_GR8;               ///< 当前相机的pixelformat格式
-int64_t g_color_filter = GX_COLOR_FILTER_NONE;                    ///< bayer插值的参数
-pthread_t g_acquire_thread = 0;                                   ///< 采集线程ID
-bool g_get_image = false;                                         ///< 采集线程是否结束的标志：true 运行；false 退出
-void *g_frameinfo_data = NULL;                                    ///< 帧信息数据缓冲区
-size_t g_frameinfo_datasize = 0;                                  ///< 帧信息数据长度
+int g_LibConnect_n=0;//相机Lib引用计数  每个相机Inite会使得次值+1 close会使得此值-1 非线程安全
 
-CTimeCounter g_time_counter;                                      ///< 计时器
-
-//获取图像大小并申请图像数据空间
-int PreForImage(GX_DEV_HANDLE hdevice);
-
-//释放资源
-int UnPreForImage(GX_DEV_HANDLE hdevice);
-
-//采集线程函数
-void *ProcGetImage(void* param);
-
-
-//将相机输出的原始数据转换为RGB数据
-void ProcessData(void *image_buffer, void *image_raw8_buffer, void *image_rgb_buffer, int image_width, int image_height, int pixel_format, int color_filter);
-
-//获取错误信息描述
-void GetErrorString(GX_STATUS error_status);
-
-//获取当前帧号
-int GetCurFrameIndex(GX_DEV_HANDLE hdevice);
-
-//启动相机
-int CamaraInit(char* s,GX_DEV_HANDLE hdevice);
-//关闭相机
-int CamaraStop(GX_DEV_HANDLE hdevice);
-
-void Camaratest()
+int Camera::Init(char* No)
 {
-    GX_DEV_HANDLE hdevice_test;
-    CamaraInit("1",hdevice_test);
-    CamaraStop(hdevice_test);
-}
-
-int CamaraInit(char* s,GX_DEV_HANDLE hdevice)
-{
-    uid_t user = 0;
-    user = geteuid();
-    /*if(user != 0)
+    if(CameraState_)
     {
-        printf("\n");
-        printf("Please run this application with 'sudo -E ./GxAcquireContinuousSofttrigger' or"
-                       " Start with root !\n");
-        printf("\n");
-        return 0;
-    }*/
-
-    printf("\n");
-
+        printf("Warning> Camera No:%s has inited.\r\n",No);
+        return -1;
+    }
     GX_STATUS status = GX_STATUS_SUCCESS;
     int ret = 0;
     GX_OPEN_PARAM open_param;
-
     //初始化设备打开参数，默认打开序号为１的设备
     open_param.accessMode = GX_ACCESS_EXCLUSIVE;
     open_param.openMode = GX_OPEN_INDEX;
-    open_param.pszContent = s;
+    open_param.pszContent = No;
 
-    //初始化库
-    status = GXInitLib();
-    if(status != GX_STATUS_SUCCESS)
+    //如果是第一个调用lib的相机，首先链接Lib
+    if(0==g_LibConnect_n)
     {
-        GetErrorString(status);
-        return 0;
+        //链接Lib
+        status = GXInitLib();
+        if(status != GX_STATUS_SUCCESS)
+        {
+            GetErrorString(status);
+            printf("Erro>Inite Camera No:%s Fail.\r\n",No);
+            return -1;
+        }
     }
 
-    //枚举设备个数
+    g_LibConnect_n+=1;//连接库如果成功 全局Lib计数 加一
+
     uint32_t device_number = 0;
-    status = GXUpdateDeviceList(&device_number, 1000);
+    status = GXUpdateDeviceList(&device_number, 1000);//获取设备台数
+
     if(status != GX_STATUS_SUCCESS)
     {
         GetErrorString(status);
-        return 0;
+        return -1;
     }
-    printf("----- %d\n",device_number);
+
     if(device_number <= 0)
     {
-        printf("<No device>\n");
-        return 0;
+        printf("Erro> No device Connected\r\n");
+        return -1;
+    }
+    //打开摄像头
+    status = GXOpenDevice(&open_param, &hdevice_);
+    if(status == GX_STATUS_SUCCESS)
+    {
+        printf("Open Camera No:%s Success.\r\n",No);
+        CameraState_=Camera_State_Inited;
     }
     else
     {
-        //默认打开第1个设备
-        status = GXOpenDevice(&open_param, &hdevice);
-        if(status == GX_STATUS_SUCCESS)
-        {
-            printf("<Open device success>\n");
-        }
-        else
-        {
-            printf("<Open devide fail>\n");
-            return 0;
-        }
+        printf("Erro>Open Camera No:%s Fail.\r\n",No);
+        return -1;
     }
 
-    //设置采集模式为连续采集
-    status = GXSetEnum(hdevice, GX_ENUM_ACQUISITION_MODE, GX_ACQ_MODE_CONTINUOUS);
-    if(status != GX_STATUS_SUCCESS)
+    while(1)
     {
-        GetErrorString(status);
-        status = GXCloseDevice(hdevice);
-        if(hdevice != NULL)
-        {
-            hdevice = NULL;
-        }
-        status = GXCloseLib();
-        return 0;
+    status = GXSetEnum(hdevice_, GX_ENUM_ACQUISITION_MODE, GX_ACQ_MODE_CONTINUOUS);//设置采集模式为连续采集
+        if(status!=GX_STATUS_SUCCESS)break;
+    status = GXSetEnum(hdevice_, GX_ENUM_TRIGGER_MODE, GX_TRIGGER_MODE_ON);//设置触发开关为ON
+        if(status!=GX_STATUS_SUCCESS)break;
+    status = GXSetEnum(hdevice_, GX_ENUM_TRIGGER_SOURCE, GX_TRIGGER_SOURCE_SOFTWARE);//设置触发源为软触发
+        if(status!=GX_STATUS_SUCCESS)break;
+    status = GXGetEnum(hdevice_, GX_ENUM_PIXEL_FORMAT, &pixel_format_);//获取相机输出数据的颜色格式
+        if(status!=GX_STATUS_SUCCESS)break;
+    status = GXGetEnum(hdevice_, GX_ENUM_PIXEL_COLOR_FILTER, &color_filter_);//相机采集图像为彩色还是黑白
+        if(status!=GX_STATUS_SUCCESS)break;
+    break;
     }
+    if(status!=GX_STATUS_SUCCESS)GetErrorString(status);
+    else printf("Camara Set Ok\r\n");
 
-    //设置触发开关为ON
-    status = GXSetEnum(hdevice, GX_ENUM_TRIGGER_MODE, GX_TRIGGER_MODE_ON);
-    if(status != GX_STATUS_SUCCESS)
-    {
-        GetErrorString(status);
-        status = GXCloseDevice(hdevice);
-        if(hdevice != NULL)
-        {
-            hdevice = NULL;
-        }
-        status = GXCloseLib();
-        return 0;
-    }
-
-
-    //设置触发源为软触发
-    status = GXSetEnum(hdevice, GX_ENUM_TRIGGER_SOURCE, GX_TRIGGER_SOURCE_SOFTWARE);
-    if(status != GX_STATUS_SUCCESS)
-    {
-        GetErrorString(status);
-        status = GXCloseDevice(hdevice);
-        if(hdevice != NULL)
-        {
-            hdevice = NULL;
-        }
-        status = GXCloseLib();
-        return 0;
-    }
-
-
-    //获取相机输出数据的颜色格式
-    status = GXGetEnum(hdevice, GX_ENUM_PIXEL_FORMAT, &g_pixel_format);
-    if(status != GX_STATUS_SUCCESS)
-    {
-        GetErrorString(status);
-    }
-
-    //相机采集图像为彩色还是黑白
-    status = GXGetEnum(hdevice, GX_ENUM_PIXEL_COLOR_FILTER, &g_color_filter);
-    if(status != GX_STATUS_SUCCESS)
-    {
-        GetErrorString(status);
-    }
-
-    //为采集做准备
-    ret = PreForImage(hdevice);
-    if(ret != 0)
-    {
-        printf("<Failed to prepare for acquire image>\n");
-        status = GXCloseDevice(hdevice);
-        if(hdevice != NULL)
-        {
-            hdevice = NULL;
-        }
-        status = GXCloseLib();
-        return 0;
-    }
-
-    //发送开采命令
-    status = GXSendCommand(hdevice, GX_COMMAND_ACQUISITION_START);
-    if(status != GX_STATUS_SUCCESS)
-    {
-        GetErrorString(status);
-        status = GXCloseDevice(hdevice);
-        if(hdevice != NULL)
-        {
-            hdevice = NULL;
-        }
-        status = GXCloseLib();
-        return 0;
-    }
-
-    //启动接收线程
-    ret = pthread_create(&g_acquire_thread, 0, ProcGetImage, 0);
-    if(ret != 0)
-    {
-        printf("<Failed to create the collection thread>\n");
-        return 0;
-    }
-    printf("Camara Inite OK..\r\n");
-    return 0;
-}
-
-int CamaraStop(GX_DEV_HANDLE hdevice)
-{
-    //为停止采集做准备
-    int ret = 0;
-    GX_STATUS status = GX_STATUS_SUCCESS;
-    ret = UnPreForImage(hdevice);
-    if(ret != 0)
-    {
-        status = GXCloseDevice(hdevice);
-        if(hdevice != NULL)
-        {
-            hdevice = NULL;
-        }
-        status = GXCloseLib();
-        return 0;
-    }
-
-    //关闭设备
-    status = GXCloseDevice(hdevice);
-    if(status != GX_STATUS_SUCCESS)
-    {
-        return 0;
-    }
-    //释放库
-    status = GXCloseLib();
-    return 0;
-}
-
-int CamaraTrigger(GX_DEV_HANDLE hdevice)//发送触发指令
-{
-    return GXSendCommand(hdevice, GX_COMMAND_TRIGGER_SOFTWARE);
-}
-//-------------------------------------------------
-/**
-\brief 获取当前帧号
-\return 当前帧号
-*/
-//-------------------------------------------------
-int GetCurFrameIndex(GX_DEV_HANDLE hdevice)
-{
-    GX_STATUS status = GX_STATUS_SUCCESS;
-    status = GXGetBuffer(hdevice, GX_BUFFER_FRAME_INFORMATION, (uint8_t*)g_frameinfo_data, &g_frameinfo_datasize);
-    if(status != GX_STATUS_SUCCESS)
-    {
-        //用户可自行处理
-    }
-
-    int current_index = 0;
-    memcpy(&current_index, (uint8_t*)g_frameinfo_data+FRAMEINFOOFFSET, sizeof(int));
-
-    return current_index;
-}
-
-//-------------------------------------------------
-/**
-\brief 获取图像大小并申请图像数据空间
-\return void
-*/
-//-------------------------------------------------
-int PreForImage(GX_DEV_HANDLE hdevice)
-{
-    GX_STATUS status = GX_STATUS_SUCCESS;
-
-    //为获取的图像分配存储空间
+    //为采集做准备 为获取的图像分配存储空间
     int64_t payload_size = 0;
-    status = GXGetInt(hdevice, GX_INT_PAYLOAD_SIZE, &payload_size);
-    if(status != GX_STATUS_SUCCESS)
+    status = GXGetInt(hdevice_, GX_INT_PAYLOAD_SIZE, &payload_size);
+
+    if(!frame_data_.pImgBuf)
+        frame_data_.pImgBuf = malloc(payload_size);
+    if(!raw8_buffer_)//将非8位raw数据转换成8位数据的时候的中转缓冲buffer
+        raw8_buffer_ = malloc(payload_size);
+    if(!rgb_frame_data_)
+        rgb_frame_data_ = malloc(payload_size * 3);
+
+    status = GXGetBufferLength(hdevice_, GX_BUFFER_FRAME_INFORMATION, &frameinfo_datasize_);//获取帧信息长度并申请帧信息数据空间
+    if(status!=GX_STATUS_SUCCESS)GetErrorString(status);
+
+    if(frameinfo_datasize_ > 0)
     {
-        GetErrorString(status);
-        return status;
+        frameinfo_data_ = malloc(frameinfo_datasize_);
+    }
+    if(!(frame_data_.pImgBuf && raw8_buffer_ && rgb_frame_data_ ))
+    {
+        printf("Erro>Failed to allocate memory\n");
+        return -1;
     }
 
-    g_frame_data.pImgBuf = malloc(payload_size);
-    if (g_frame_data.pImgBuf == NULL)
-    {
-        printf("<Failed to allocate memory>\n");
-        return MEMORY_ALLOT_ERROR;
-    }
+    frame_.create(1024,1280,CV_8UC3);
+    //frame_=cv::Mat(frame_data_.nWidth,frame_data_.nHeight,CV_8UC3,cv::Scalar(0,0,0)).clone();
 
-    //将非8位raw数据转换成8位数据的时候的中转缓冲buffer
-    g_raw8_buffer = malloc(payload_size);
-    if (g_raw8_buffer == NULL)
-    {
-        printf("<Failed to allocate memory>\n");
-        return MEMORY_ALLOT_ERROR;
-    }
-
-    //RGB数据是RAW数据的3倍大小
-    g_rgb_frame_data = malloc(payload_size * 3);
-    if (g_rgb_frame_data == NULL)
-    {
-        printf("<Failed to allocate memory>\n");
-        return MEMORY_ALLOT_ERROR;
-    }
-
-    //获取帧信息长度并申请帧信息数据空间
-    status = GXGetBufferLength(hdevice, GX_BUFFER_FRAME_INFORMATION, &g_frameinfo_datasize);
-    if(status != GX_STATUS_SUCCESS)
-    {
-        //用户根据实际情况自行处理
-    }
-
-    if(g_frameinfo_datasize > 0)
-    {
-        g_frameinfo_data = malloc(g_frameinfo_datasize);
-        if(g_frameinfo_data == NULL)
-        {
-            printf("<Failed to allocate memory>\n");
-            return MEMORY_ALLOT_ERROR;
-        }
-    }
     return 0;
 }
-
-//-------------------------------------------------
-/**
-\brief 释放资源
-\return void
-*/
-//-------------------------------------------------
-int UnPreForImage(GX_DEV_HANDLE hdevice)
+int Camera::ReInit()
+{
+ return 0;
+}
+int Camera::Start()
 {
     GX_STATUS status = GX_STATUS_SUCCESS;
-    uint32_t ret = 0;
+    status = GXSendCommand(hdevice_, GX_COMMAND_ACQUISITION_START);//发送开采命令
+    if(status != GX_STATUS_SUCCESS)GetErrorString(status);
+}
+int Camera::Stop()
+{
+    GX_STATUS status = GXSendCommand(hdevice_, GX_COMMAND_ACQUISITION_STOP);//停止采集
+}
+int Camera::Triger()
+{
+    GX_STATUS status = GX_STATUS_SUCCESS;
+    status = GXSendCommand(hdevice_, GX_COMMAND_TRIGGER_SOFTWARE);
+    if(status != GX_STATUS_SUCCESS)GetErrorString(status);
 
-    g_get_image = false;
-    ret = pthread_join(g_acquire_thread,NULL);
-    if(ret != 0)
+}
+int Camera::GetImg()
+{
+    GX_STATUS status = GXGetImage(hdevice_, &frame_data_, 100);
+    if(status == GX_STATUS_SUCCESS)
     {
-        printf("<Failed to release resources>");
-        return ret;
-    }
+        ProcessData(frame_data_.pImgBuf,
+                    raw8_buffer_,
+                    rgb_frame_data_,
+                    frame_data_.nWidth,
+                    frame_data_.nHeight,
+                    pixel_format_,
+                    color_filter_);//将Raw数据处理成RGB数据
+        if(frame_.cols!=frame_data_.nWidth || frame_.rows!=frame_data_.nHeight)
+            cv::resize(frame_,frame_,cv::Size(frame_data_.nWidth,frame_data_.nHeight));
 
-    //发送停采命令
-    status = GXSendCommand(hdevice, GX_COMMAND_ACQUISITION_STOP);
-    if(status != GX_STATUS_SUCCESS)
-    {
-        return status;
+        frame_.data=(unsigned char *)rgb_frame_data_;
+        cv::cvtColor(frame_,frame_,cv::COLOR_RGB2BGR);
     }
+    else GetErrorString(status);
+}
+int Camera::SaveImg()
+{
+    cv::imwrite("outimg.jpg",frame_);
+    return 0;
+}
+int Camera::Close()
+{
+    //释放camera资源
+    GX_STATUS status = GXCloseDevice(hdevice_);
+    status = GXSendCommand(hdevice_, GX_COMMAND_ACQUISITION_STOP);//停止采集
 
     //释放buffer
-    if(g_frame_data.pImgBuf != NULL)
+    if(frame_data_.pImgBuf != NULL)
     {
-        free(g_frame_data.pImgBuf);
-        g_frame_data.pImgBuf = NULL;
+        free(frame_data_.pImgBuf);
+        frame_data_.pImgBuf = NULL;
     }
 
-    if(g_raw8_buffer != NULL)
+    if(raw8_buffer_ != NULL)
     {
-        free(g_raw8_buffer);
-        g_raw8_buffer = NULL;
+        free(raw8_buffer_);
+        raw8_buffer_ = NULL;
     }
 
-    if(g_rgb_frame_data != NULL)
+    if(rgb_frame_data_ != NULL)
     {
-        free(g_rgb_frame_data);
-        g_rgb_frame_data = NULL;
+        free(rgb_frame_data_);
+        rgb_frame_data_ = NULL;
     }
 
-    if(g_frameinfo_data != NULL)
+    if(frameinfo_data_ != NULL)
     {
-        free(g_frameinfo_data);
-        g_frameinfo_data = NULL;
+        free(frameinfo_data_);
+        frameinfo_data_ = NULL;
     }
 
+    g_LibConnect_n-=1;
+    if(0==g_LibConnect_n)//最后一个camera 调用close 释放lib
+    {
+        status = GXCloseLib();//关闭Lib
+    }
     return 0;
 }
 
-
-//-------------------------------------------------
-/**
-\brief 采集线程函数hdevice
-\param param 线程传入参数
-\return void*
-*/
-//-------------------------------------------------
-void *ProcGetImage(void* param)
-{
-    GX_STATUS status = GX_STATUS_SUCCESS;
-    bool is_implemented = false;
-    //接收线程启动标志
-    g_get_image = true;
-
-    while(g_get_image)
-    {
-
-        status = GXGetImage(g_device, &g_frame_data, 100);
-        if(status == GX_STATUS_SUCCESS)
-        {
-            if(g_frame_data.nStatus == 0)
-            {
-                printf("<Successful acquisition: Width: %d Height: %d>\n", g_frame_data.nWidth, g_frame_data.nHeight);
-                status = GXIsImplemented(g_device, GX_BUFFER_FRAME_INFORMATION, &is_implemented);
-                if(status == GX_STATUS_SUCCESS)
-                {
-                    if(true == is_implemented)
-                    {
-                        ;//printf("<Frame number: %d>\n", GetCurFrameIndex(hdevice));
-                    }
-                }
-
-                //将Raw数据处理成RGB数据
-                ProcessData(g_frame_data.pImgBuf,
-                            g_raw8_buffer,
-                            g_rgb_frame_data,
-                            g_frame_data.nWidth,
-                            g_frame_data.nHeight,
-                            g_pixel_format,
-                            g_color_filter);
-                //将数据传递到Mat中完成采集
-
-            }
-        }
-    }
-}
-
-//-------------------------------------------------
-/**
-\brief 保存内存数据到ppm格式文件中
-\param image_buffer RAW数据经过插值换算出的RGB数据
-\param width 图像宽
-\param height 图像高
-\return void
-*/
-//-------------------------------------------------
-/*void SavePPMFile(void *image_buffer, size_t width, size_t height)
-{
-    char name[64] = {0};
-
-    static int rgb_file_index = 1;
-    FILE* ff = NULL;
-
-    sprintf(name, "RGB%d.ppm", rgb_file_index++);
-    ff=fopen(name,"wb");
-    if(ff != NULL)
-    {
-        fprintf(ff, "P6\n" "%d %d\n255\n", width, height);
-        fwrite(image_buffer, 1, width * height * 3, ff);
-        fclose(ff);
-        ff = NULL;
-        printf("<Save %s success>\n", name);
-    }
-}
-*/
-//-------------------------------------------------
-/**
-\brief 保存raw数据文件
-\param image_buffer raw图像数据
-\param width 图像宽
-\param height 图像高
-\return void
-*/
-//-------------------------------------------------
-/*void SaveRawFile(void *image_buffer, size_t width, size_t height)
-{
-    char name[64] = {0};
-
-    static int raw_file_index = 1;
-    FILE* ff = NULL;
-
-    sprintf(name, "RAW%d.pgm", raw_file_index++);
-    ff=fopen(name,"wb");
-    if(ff != NULL)
-    {
-        fprintf(ff, "P5\n" "%u %u 255\n", width, height);
-        fwrite(image_buffer, 1, width * height, ff);
-        fclose(ff);
-        ff = NULL;
-        printf("<Save %s success>\n", name);
-    }
-}
-*/
-//----------------------------------------------------------------------------------
-/**
-\brief  将相机输出的原始数据转换为RGB数据
-\param  [in] image_buffer  指向图像缓冲区的指针
-\param  [in] image_raw8_buffer  将非8位的Raw数据转换成8位的Raw数据的中转缓冲buffer
-\param  [in,out] image_rgb_buffer  指向RGB数据缓冲区的指针
-\param  [in] image_width 图像宽
-\param  [in] image_height 图像高
-\param  [in] pixel_format 图像的格式
-\param  [in] color_filter Raw数据的像素排列格式
-\return 无返回值
-*/
-//----------------------------------------------------------------------------------
-void ProcessData(void *image_buffer, void *image_raw8_buffer, void *image_rgb_buffer, int image_width, int image_height, int pixel_format, int color_filter)
+void Camera::ProcessData(void *image_buffer, void *image_raw8_buffer, void *image_rgb_buffer, int image_width, int image_height, int pixel_format, int color_filter)
 {
     switch(pixel_format)
     {
@@ -528,10 +223,8 @@ void ProcessData(void *image_buffer, void *image_raw8_buffer, void *image_rgb_bu
         case GX_PIXEL_FORMAT_BAYER_GB8:
         case GX_PIXEL_FORMAT_BAYER_BG8:
             //将Raw8图像转换为RGB图像以供显示
-            g_time_counter.Begin();
             DxRaw8toRGB24(image_buffer,image_rgb_buffer, image_width, image_height,RAW2RGB_NEIGHBOUR,
                           DX_PIXEL_COLOR_FILTER(color_filter),false);
-            printf("<DxRaw8toRGB24 time consuming: %ld us>\n", g_time_counter.End());
             break;
 
         case GX_PIXEL_FORMAT_MONO12:
@@ -561,15 +254,8 @@ void ProcessData(void *image_buffer, void *image_raw8_buffer, void *image_rgb_bu
     }
 }
 
-//----------------------------------------------------------------------------------
-/**
-\brief  获取错误信息描述
-\param  error_status  错误码
 
-\return void
-*/
-//----------------------------------------------------------------------------------
-void GetErrorString(GX_STATUS error_status)
+void Camera::GetErrorString(GX_STATUS error_status)
 {
     char *error_info = NULL;
     size_t    size         = 0;
@@ -602,6 +288,3 @@ void GetErrorString(GX_STATUS error_status)
         error_info = NULL;
     }
 }
-
-
-

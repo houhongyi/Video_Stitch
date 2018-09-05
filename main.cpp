@@ -1,21 +1,91 @@
 #include <opencv2/opencv.hpp>
+#include "Camera.h"
 using namespace cv;
 
-void Camaratest();
+//void Camaratest();
+
+#define Mouse_Scale_Max 1.6
+#define Mouse_Scale_Min 1
+#define OutImg_W 1920
+#define OutImg_H 1080
+
+Point Mouse_pt(0,0);
+float Mouse_Scale=1.0f;
+void on_MouseHandle(int event,int x,int y, int flags ,void* param);
+int Mouse_LB=0;
+int Mouse_RB=0;
+
+
+inline void MaxMin(float* a,float max,float min)
+{
+    if(*a>max)*a=max;
+    if(*a<min)*a=min;
+}
+
 
 int main()
 {
-    /*std::vector<cv::Mat> vImg;
+    int photoflag=0;
+    Camera Camera_L,Camera_R;
+    if(Camera_L.Init("1")<0 || Camera_R.Init("2")<0){
+        Camera_L.Close();
+        Camera_R.Close();
+        return 0;
+    }
+
+    Camera_L.Start();
+    Camera_R.Start();
+    Camera_L.Triger();
+    Camera_R.Triger();
+    char fileName[30]={0};
+
+    int frame_n=0;
+    Mat img_L;
+
+    while(1)
+    {
+        Camera_L.GetImg();
+        Camera_R.GetImg();
+        Camera_L.Triger();
+        Camera_R.Triger();
+
+        char c=waitKey(10);
+        if(c==27)break;
+        if(c=='p')photoflag=1;
+
+
+        imshow("CameraL",Camera_L.frame_);
+        imshow("CameraR",Camera_R.frame_);
+
+        if(photoflag)
+        {
+            sprintf(fileName,"./IMG/ImgL%d.jpg",frame_n);
+            imwrite(fileName, Camera_L.frame_);
+            sprintf(fileName, "./IMG/ImgR%d.jpg", frame_n);
+            imwrite(fileName, Camera_R.frame_);
+            frame_n++;
+            printf("%s\r\n",fileName);
+        }
+
+    }
+    Camera_L.Close();
+    Camera_R.Close();
+    return 0;
+
+    std::vector<cv::Mat> vImg;
     cv::Mat rImg;
     cv::Mat img_l, img_r, img_l_l, img_r_l;
-    img_l = cv::imread("IMG_L.jpg");
-    img_r = cv::imread("IMG_M.jpg");
+    img_l = cv::imread("Img1.jpeg");
+    img_r = cv::imread("Img2.jpeg");
 
-    cv::resize(img_l, img_l_l, cv::Size(), 0.3,0.3);
-    cv::resize(img_r, img_r_l, cv::Size(), 0.3,0.3);
+
+    cv::resize(img_l, img_l_l, cv::Size(), 1,1);
+    cv::resize(img_r, img_r_l, cv::Size(), 1,1);
     printf("Size of img->(%d , %d) \r\n",img_l_l.cols,img_l_l.rows);
     vImg.push_back(img_l_l);
     vImg.push_back(img_r_l);
+    //vImg.push_back(cv::imread("Img3.jpeg"));
+    //vImg.push_back(cv::imread("Img4.jpeg"));
 
     for (int i = 0; i < vImg.size(); ++i) {
         if (!vImg[i].data) {
@@ -23,9 +93,10 @@ int main()
             return 0;
         }
     }
-    //MyStitcher(vImg);
 
     cv::Stitcher stitcher = cv::Stitcher::createDefault();
+    stitcher.do_wave_correct_= false;
+    stitcher.conf_thresh_=0.1;
 
     unsigned long AAtime = 0, BBtime = 0; //check processing time
     AAtime = cv::getTickCount(); //check processing time
@@ -34,16 +105,63 @@ int main()
 
     BBtime = cv::getTickCount(); //check processing time
     printf("Time consuming: %.2lf sec \n", (BBtime - AAtime) / cv::getTickFrequency()); //check processing time
-
+    cv::Mat out;
     if (cv::Stitcher::OK == status) {
-        cv::Mat out;
-        cv::resize(rImg, out, cv::Size(),0.25,0.25);
+        cv::resize(rImg, out,cv::Size(),0.1,0.1);
         cv::imshow("Stitching Result", out);
         printf("outImgSize> %d,%d\r\n", rImg.cols, rImg.rows);
         cv::imwrite("Stitched_Img.jpg", rImg);
-    } else
+    } else{
         printf("Stitching fail.");
+        return 0;
+    }
 
+
+    waitKey(0);
+    namedWindow("WholeView");
+    namedWindow("Out_1080P");
+    setMouseCallback("WholeView",on_MouseHandle,NULL);
+    Point Display_pt(0,0);
+    float Display_W=OutImg_W;
+    float Display_H=OutImg_H;
+    Rect DisplayRect;
+    while(1)
+    {
+        char c=waitKey(5);
+        if (27==c)
+            return 0;
+
+        Display_pt.x+=(Mouse_pt.x-Display_pt.x)*0.05;
+        Display_pt.y+=(Mouse_pt.y-Display_pt.y)*0.05;
+
+
+        if(!Mouse_LB)Mouse_Scale+=0.05;
+        else Mouse_Scale-=0.05;
+        MaxMin(&Mouse_Scale,Mouse_Scale_Max,Mouse_Scale_Min);
+
+        Display_W=OutImg_W*Mouse_Scale;
+        Display_H=OutImg_H*Mouse_Scale;
+
+        Mat WholeView=out.clone();
+
+        //防止鼠标飘离有效区域
+
+        if(Display_pt.x-Display_W/2<0)Display_pt.x=Display_W/2;
+        if(Display_pt.y-Display_H/2<0)Display_pt.y=Display_H/2;
+        if(Display_pt.x+Display_W/2>rImg.cols)Display_pt.x=rImg.cols-Display_W/2;
+        if(Display_pt.y+Display_H/2>rImg.rows)Display_pt.y=rImg.rows-Display_H/2;
+
+        DisplayRect=Rect(Display_pt.x-Display_W/2,Display_pt.y-Display_H/2,Display_W,Display_H);
+        Mat temOut=rImg(DisplayRect).clone();
+
+        resize(temOut,temOut,Size(OutImg_W,OutImg_H));
+        imshow("Out_1080P",temOut);
+        rectangle(WholeView,Rect(DisplayRect.x/10,DisplayRect.y/10,DisplayRect.width/10,DisplayRect.height/10),Scalar(255,255,255));
+        imshow("WholeView",WholeView);
+
+    }
+
+/*
     //===================================连续拼合====================================
     UMat img_remaped_l,img_remaped_r,img_resault;
     img_remaped_l.create(stitcher.warpmapsX_[0].size(),img_l_l.type());
@@ -54,7 +172,7 @@ int main()
     Remaptime = cv::getTickCount();
     stitichtime=Remaptime;
     cv::Mat blended;
-    for(int n=0;n<1;n++)
+    for(int n=0;n<1;n++)1.5
     {
         remap(img_l_l, img_remaped_l, stitcher.warpmapsX_[0], stitcher.warpmapsY_[0], INTER_LINEAR, BORDER_REFLECT);
         remap(img_r_l, img_remaped_r, stitcher.warpmapsX_[1], stitcher.warpmapsY_[1], INTER_LINEAR, BORDER_REFLECT);
@@ -71,11 +189,37 @@ int main()
     imshow("remap_l",img_remaped_l);
     imshow("remap_R",img_remaped_r);
     imshow("remap_resault",blended);
-    imshow("mask",stitcher.maskwarped_[0]);
+    imshow("mask",stitcher.            maskMouse_LBwarped_[0]);
     imwrite("output.jpg",blended);*/
-    waitKey(0);
-    Camaratest();
-    waitKey(0);
+    //waitKey(0);
+    //Camaratest();
+    //waitKey(0);
     return 0;
 }
 
+
+void on_MouseHandle(int event,int x,int y, int flags ,void* param)
+{
+    switch(event)
+    {
+        case EVENT_MOUSEMOVE:
+            Mouse_pt.x=x*10;
+            Mouse_pt.y=y*10;
+            break;
+        case EVENT_LBUTTONDOWN:
+            Mouse_LB=1;
+            //MaxMin(&Mouse_Scale,Mouse_Scale_Max,Mouse_Scale_Min);
+            break;
+        case EVENT_LBUTTONUP:
+            Mouse_LB=0;
+            break;
+        case EVENT_RBUTTONDOWN:
+            Mouse_RB=1;
+            //MaxMin(&Mouse_Scale,Mouse_Scale_Max,Mouse_Scale_Min);
+            break;
+        case EVENT_RBUTTONUP:
+            Mouse_RB=0;
+            break;
+    }
+
+}
