@@ -2,12 +2,10 @@
 #include "Camera.h"
 using namespace cv;
 
-//void Camaratest();
-
 #define Mouse_Scale_Max 1.6
 #define Mouse_Scale_Min 1
-#define OutImg_W 1920
-#define OutImg_H 1080
+#define OutImg_W 640//1920
+#define OutImg_H 480//1080
 
 Point Mouse_pt(0,0);
 float Mouse_Scale=1.0f;
@@ -25,58 +23,12 @@ inline void MaxMin(float* a,float max,float min)
 
 int main()
 {
-    int photoflag=0;
-    Camera Camera_L,Camera_R;
-    if(Camera_L.Init("1")<0 || Camera_R.Init("2")<0){
-        Camera_L.Close();
-        Camera_R.Close();
-        return 0;
-    }
-
-    Camera_L.Start();
-    Camera_R.Start();
-    Camera_L.Triger();
-    Camera_R.Triger();
-    char fileName[30]={0};
-
-    int frame_n=0;
-    Mat img_L;
-
-    while(1)
-    {
-        Camera_L.GetImg();
-        Camera_R.GetImg();
-        Camera_L.Triger();
-        Camera_R.Triger();
-
-        char c=waitKey(10);
-        if(c==27)break;
-        if(c=='p')photoflag=1;
-
-
-        imshow("CameraL",Camera_L.frame_);
-        imshow("CameraR",Camera_R.frame_);
-
-        if(photoflag)
-        {
-            sprintf(fileName,"./IMG/ImgL%d.jpg",frame_n);
-            imwrite(fileName, Camera_L.frame_);
-            sprintf(fileName, "./IMG/ImgR%d.jpg", frame_n);
-            imwrite(fileName, Camera_R.frame_);
-            frame_n++;
-            printf("%s\r\n",fileName);
-        }
-
-    }
-    Camera_L.Close();
-    Camera_R.Close();
-    return 0;
 
     std::vector<cv::Mat> vImg;
     cv::Mat rImg;
     cv::Mat img_l, img_r, img_l_l, img_r_l;
-    img_l = cv::imread("Img1.jpeg");
-    img_r = cv::imread("Img2.jpeg");
+    img_l = cv::imread("imgStitch/Img_02.jpg");
+    img_r = cv::imread("imgStitch/Img_01.jpg");
 
 
     cv::resize(img_l, img_l_l, cv::Size(), 1,1);
@@ -96,7 +48,7 @@ int main()
 
     cv::Stitcher stitcher = cv::Stitcher::createDefault();
     stitcher.do_wave_correct_= false;
-    stitcher.conf_thresh_=0.1;
+    stitcher.conf_thresh_=1;
 
     unsigned long AAtime = 0, BBtime = 0; //check processing time
     AAtime = cv::getTickCount(); //check processing time
@@ -161,7 +113,7 @@ int main()
 
     }
 
-/*
+#ifdef RepeatStiting
     //===================================连续拼合====================================
     UMat img_remaped_l,img_remaped_r,img_resault;
     img_remaped_l.create(stitcher.warpmapsX_[0].size(),img_l_l.type());
@@ -191,9 +143,8 @@ int main()
     imshow("remap_resault",blended);
     imshow("mask",stitcher.            maskMouse_LBwarped_[0]);
     imwrite("output.jpg",blended);*/
-    //waitKey(0);
-    //Camaratest();
-    //waitKey(0);
+#endif
+    waitKey(0);
     return 0;
 }
 
